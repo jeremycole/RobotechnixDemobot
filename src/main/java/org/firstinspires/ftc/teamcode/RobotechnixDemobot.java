@@ -8,32 +8,55 @@ import com.qualcomm.robotcore.hardware.AnalogInput;
 import com.qualcomm.robotcore.hardware.CompassSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.GyroSensor;
+import com.qualcomm.robotcore.hardware.IrSeekerSensor;
 import com.qualcomm.robotcore.hardware.Servo;
 
 import java.util.HashMap;
 import java.util.Locale;
 
-public class RobotechnixDemobot {
+@SuppressWarnings("unused")
+class RobotechnixDemobot {
     private interface DistanceFromTarget {
         double distance();
     }
 
-    class AnyMotorReachedTarget implements DistanceFromTarget {
+    private class AnyMotorReachedTarget implements DistanceFromTarget {
         @Override
         public double distance() {
             return mDrivetrain.minDistanceUntilAnyEncoderSatisfied();
         }
     }
 
-    private class GyroReachedHeading implements DistanceFromTarget {
+    interface HeadingProvidingDevice {
+        int heading();
+    }
+
+    private class GyroHeading implements HeadingProvidingDevice {
+        @Override
+        public int heading() {
+            return mGyroSensor.getHeading();
+        }
+    }
+
+    private class CompassHeading implements HeadingProvidingDevice {
+        @Override
+        public int heading() {
+            return (int) mCompassSensor.getDirection();
+        }
+    }
+
+    private class DeviceReachedHeading implements DistanceFromTarget {
+        private HeadingProvidingDevice mDevice;
         private RobotDrivetrain.RotationDirection mRotationDirection;
         private int mInitialHeading, mDesiredHeading, mLastHeading;
         private int mCurrentHeadingAdjustment = 0;
         private int mDesiredHeadingAdjustment = 0;
         private int mTotalDegrees;
 
-        public GyroReachedHeading(RobotDrivetrain.RotationDirection rotationDirection,
-                                  int initialHeading, int desiredHeading) {
+        DeviceReachedHeading(HeadingProvidingDevice device,
+                                    RobotDrivetrain.RotationDirection rotationDirection,
+                                    int initialHeading, int desiredHeading) {
+            mDevice = device;
             mRotationDirection = rotationDirection;
             mInitialHeading = mLastHeading = initialHeading;
             mDesiredHeading = desiredHeading;
@@ -56,7 +79,7 @@ public class RobotechnixDemobot {
 
         @Override
         public double distance() {
-            int currentHeading = mGyroSensor.getHeading();
+            int currentHeading = mDevice.heading();
 
             if (mRotationDirection == RobotDrivetrain.RotationDirection.LEFT) {
                 if (currentHeading > mLastHeading && currentHeading > 350)
@@ -94,21 +117,41 @@ public class RobotechnixDemobot {
         }
     }
 
-    final private static double DRIVE_SLIPPAGE_FACTOR  = 1.00;
-    final private static double STRAFE_SLIPPAGE_FACTOR = 1.08;
-    final private static double ROTATE_SLIPPAGE_FACTOR = 1.00;
+    private class IrSeekerPointedAtBeacon implements DistanceFromTarget {
+        double mInitialAngle;
+        IrSeekerPointedAtBeacon() {
+            mInitialAngle = mIrSeekerSensor.getAngle();
+        }
 
-    LinearOpMode mOpMode;
-    RobotDrivetrain mDrivetrain;
-    GyroSensor mGyroSensor;
-    ModernRoboticsI2cCompassSensor mCompassSensor;
-    Servo mRangeServo;
-    AnalogInput mRangeSensor;
+        @Override
+        public double distance() {
+            double angle = mIrSeekerSensor.getAngle();
+            mOpMode.telemetry.addData("angle", angle);
+            mOpMode.telemetry.update();
 
-    final public static String LOG_TAG = "RobotechnixDemobot";
-    public void info(String msg) {
+            if (mInitialAngle < 0 && angle > 0)
+                return 0.0;
+
+            if (mInitialAngle > 0 && angle < 0)
+                return 0.0;
+
+            return Math.min(1.0, Math.abs(angle) / 30.0);
+        }
+    }
+
+    private class IrSeekerBeaconInRange implements DistanceFromTarget {
+        @Override
+        public double distance() {
+            return mIrSeekerSensor.getStrength() > 20 ? 0.0 : 1.0;
+        }
+    }
+
+    final private static String LOG_TAG = "RobotechnixDemobot";
+    private void info(String msg) {
         Log.i(LOG_TAG, msg);
     }
+
+    private LinearOpMode mOpMode;
 
     RobotechnixDemobot(LinearOpMode opmode) {
         mOpMode = opmode;
@@ -116,11 +159,17 @@ public class RobotechnixDemobot {
 
     // If stop was requested, throw a StopImmediatelyException which will be
     // caught by runOpMode to stop the robot immediately.
-    public boolean shouldKeepRunning() {
+    private boolean shouldKeepRunning() {
         if(mOpMode.isStarted() && mOpMode.isStopRequested())
             throw new StopImmediatelyException();
         return true;
     }
+
+    RobotDrivetrain mDrivetrain;
+
+    final private static double DRIVE_SLIPPAGE_FACTOR  = 1.00;
+    final private static double STRAFE_SLIPPAGE_FACTOR = 1.08;
+    final private static double ROTATE_SLIPPAGE_FACTOR = 1.00;
 
     private void initializeDrivetrain() {
         mDrivetrain = new RobotDrivetrain();
@@ -209,6 +258,8 @@ public class RobotechnixDemobot {
                 }}));
     }
 
+    private Servo mRangeServo;
+
     private void initializeServos() {
         mRangeServo = mOpMode.hardwareMap.servo.get("range_servo");
         mRangeServo.setDirection(Servo.Direction.FORWARD);
@@ -216,20 +267,31 @@ public class RobotechnixDemobot {
         mRangeServo.setPosition(0.5);
     }
 
+    private GyroSensor mGyroSensor;
+    private ModernRoboticsI2cCompassSensor mCompassSensor;
+    private AnalogInput mRangeSensor;
+    private IrSeekerSensor mIrSeekerSensor;
+
     private void initializeSensors() {
         mGyroSensor = mOpMode.hardwareMap.gyroSensor.get("gyro");
         mGyroSensor.calibrate();
+
         mOpMode.telemetry.addData(">", "Calibrating gyro...");
         mOpMode.telemetry.update();
-        while (mGyroSensor.isCalibrating() && shouldKeepRunning());
 
         mCompassSensor = mOpMode.hardwareMap.get(ModernRoboticsI2cCompassSensor.class, "compass");
         mCompassSensor.setMode(CompassSensor.CompassMode.MEASUREMENT_MODE);
 
         mRangeSensor = mOpMode.hardwareMap.analogInput.get("range");
+
+        mIrSeekerSensor = mOpMode.hardwareMap.irSeekerSensor.get("ir");
+
+        // Wait for gyro calibration to finish before returning.
+        while (shouldKeepRunning() && mGyroSensor.isCalibrating())
+            mOpMode.idle();
     }
 
-    public void initialize() {
+    void initialize() {
         initializeDrivetrain();
         initializeServos();
         initializeSensors();
@@ -238,7 +300,7 @@ public class RobotechnixDemobot {
         mOpMode.telemetry.update();
     }
 
-    public void stop() {
+    void stop() {
         info("stop");
         mDrivetrain.stop();
     }
@@ -253,33 +315,35 @@ public class RobotechnixDemobot {
         } while (shouldKeepRunning() && distance > 0.0);
     }
 
-    public void translate(int angle, double speed) {
+    void translate(int angle, double speed) {
         info(String.format(Locale.US, "translate(angle=%d, speed=%.2f)", angle, speed));
         mDrivetrain.translate(angle, speed);
     }
 
-    public void translateDistance(int angle, double speed, double distance) {
+    void translateDistance(int angle, double speed, double distance) {
         info(String.format(Locale.US, "translateDistance(angle=%d, speed=%.2f, distance=%.2f)",
                 angle, speed, distance));
         mDrivetrain.translateDistance(angle, speed, distance);
         waitForTarget(new AnyMotorReachedTarget());
     }
 
-    public void rotate(RobotDrivetrain.RotationDirection direction, double speed) {
+    void rotate(RobotDrivetrain.RotationDirection direction, double speed) {
         info(String.format(Locale.US, "rotate(direction=%s, speed=%.2f)", direction, speed));
         mDrivetrain.rotate(direction, speed);
     }
 
-    public void rotateToHeading(RobotDrivetrain.RotationDirection direction,
+    void rotateToHeading(RobotDrivetrain.RotationDirection direction,
                                 double speed, int heading) {
-        int startHeading = mGyroSensor.getHeading();
+        HeadingProvidingDevice device = new CompassHeading();
+        int startHeading = device.heading();
         rotate(direction, speed);
-        waitForTarget(new GyroReachedHeading(direction, startHeading, heading));
+        waitForTarget(new DeviceReachedHeading(device, direction, startHeading, heading));
     }
 
-    public void rotateDegrees(RobotDrivetrain.RotationDirection direction,
+    void rotateDegrees(RobotDrivetrain.RotationDirection direction,
                               double speed, int degrees) {
-        int startHeading = mGyroSensor.getHeading();
+        HeadingProvidingDevice device = new CompassHeading();
+        int startHeading = device.heading();
         int desiredHeading;
 
         if(direction == RobotDrivetrain.RotationDirection.LEFT)
@@ -290,10 +354,24 @@ public class RobotechnixDemobot {
         desiredHeading %= 360;
 
         rotate(direction, speed);
-        waitForTarget(new GyroReachedHeading(direction, startHeading, desiredHeading));
+        waitForTarget(new DeviceReachedHeading(device, direction, startHeading, desiredHeading));
     }
 
-    public void positionRangeServo(double position) {
+    void rotateToIrBeacon(double speed) {
+        double angle = mIrSeekerSensor.getAngle();
+
+        if (Math.abs(angle) < 2) {
+            return;
+        } else if (angle < 0) {
+            rotate(RobotDrivetrain.RotationDirection.LEFT, speed);
+        } else {
+            rotate(RobotDrivetrain.RotationDirection.RIGHT, speed);
+        }
+
+        waitForTarget(new IrSeekerPointedAtBeacon());
+    }
+
+    void positionRangeServo(double position) {
         mRangeServo.setPosition(position-0.03);
     }
 }

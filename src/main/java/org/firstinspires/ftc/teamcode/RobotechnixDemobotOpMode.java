@@ -6,29 +6,28 @@ import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 
 public class RobotechnixDemobotOpMode extends LinearOpMode {
     RobotechnixDemobot robot;
-    final public static String LOG_TAG = "RobotechnixDemobot";
-    public void info(String msg) {
+    final private static String LOG_TAG = "RobotechnixDemobot";
+    private void info(String msg) {
         Log.i(LOG_TAG, msg);
     }
 
     // If stop was requested, throw a StopImmediatelyException which will be
     // caught by runOpMode to stop the robot immediately.
-    public boolean shouldKeepRunning() {
+    boolean shouldKeepRunning() {
         if(isStarted() && isStopRequested())
             throw new StopImmediatelyException();
         return true;
     }
 
-    public void robotInitialize() {
+    private void robotInitialize() {
         gamepad1.setJoystickDeadzone(0.05f);
 
         robot.initialize();
     }
 
-    public void robotWaitForStart() {
-        while (!isStarted() && !isStopRequested()) {
-
-        }
+    private void robotWaitForStart() {
+        while (!isStarted() && !isStopRequested())
+            idle();
     }
 
     public void robotRun() {

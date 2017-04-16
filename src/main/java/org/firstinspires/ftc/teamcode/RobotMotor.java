@@ -6,7 +6,8 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 
 import java.util.Locale;
 
-public class RobotMotor {
+@SuppressWarnings("unused")
+class RobotMotor {
     private RobotDrivetrain mDrivetrain;
     private String mName;
     private DcMotor mDcMotor;
@@ -20,41 +21,41 @@ public class RobotMotor {
         mDcMotor.setDirection(direction);
     }
 
-    public RobotDrivetrain getDrivetrain() {
+    RobotDrivetrain getDrivetrain() {
         return mDrivetrain;
     }
 
-    public void setDrivetrain(RobotDrivetrain drivetrain) {
+    void setDrivetrain(RobotDrivetrain drivetrain) {
         mDrivetrain = drivetrain;
     }
 
-    public String getName() {
+    String getName() {
         return mName;
     }
 
-    public void setName(String name) {
+    void setName(String name) {
         mName = name;
     }
 
-    public DcMotor getDcMotor() {
+    DcMotor getDcMotor() {
         return mDcMotor;
     }
 
-    public void setDcMotor(DcMotor dcMotor) {
+    void setDcMotor(DcMotor dcMotor) {
         mDcMotor = dcMotor;
     }
 
-    public void setPower(double power) {
+    void setPower(double power) {
         mDcMotor.setPower(power);
     }
 
-    public void setTargetPositionOffset(int targetPositionOffset) {
+    void setTargetPositionOffset(int targetPositionOffset) {
         mDcMotor.setTargetPosition(mDcMotor.getCurrentPosition() + targetPositionOffset);
         Log.i("RobotMotor", String.format(Locale.US, "%s.setTargetPositionOffset(targetPositionOffset=%d) -> getCurrentPosition=%d, getTargetPosition=%d",
                 this.getName(), targetPositionOffset, mDcMotor.getCurrentPosition(), mDcMotor.getTargetPosition()));
     }
 
-    public boolean isEncoderSatisfied() {
+    boolean isEncoderSatisfied() {
         if (mDcMotor.getPower() == 0.0)
             return true;
         else if (mDcMotor.getPower() > 0.0)
@@ -63,7 +64,7 @@ public class RobotMotor {
             return mDcMotor.getCurrentPosition() <= mDcMotor.getTargetPosition();
     }
 
-    public double distanceUntilEncoderSatisfied() {
+    double distanceUntilEncoderSatisfied() {
         double delta = Math.abs(mDcMotor.getCurrentPosition() - mDcMotor.getTargetPosition());
 
         if (mDcMotor.getPower() == 0.0 || isEncoderSatisfied())
@@ -72,7 +73,7 @@ public class RobotMotor {
             return Math.min(1.0, delta / (mDcMotor.getPower() * 100.0));
     }
 
-    public void stop() {
+    void stop() {
         setPower(0.0);
     }
 }
