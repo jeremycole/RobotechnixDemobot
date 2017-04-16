@@ -2,9 +2,13 @@ package org.firstinspires.ftc.teamcode;
 
 import android.util.Log;
 
+import com.qualcomm.hardware.modernrobotics.ModernRoboticsI2cCompassSensor;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.hardware.AnalogInput;
+import com.qualcomm.robotcore.hardware.CompassSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.GyroSensor;
+import com.qualcomm.robotcore.hardware.Servo;
 
 import java.util.HashMap;
 import java.util.Locale;
@@ -14,6 +18,82 @@ public class RobotechnixDemobot {
         double distance();
     }
 
+    class AnyMotorReachedTarget implements DistanceFromTarget {
+        @Override
+        public double distance() {
+            return mDrivetrain.minDistanceUntilAnyEncoderSatisfied();
+        }
+    }
+
+    private class GyroReachedHeading implements DistanceFromTarget {
+        private RobotDrivetrain.RotationDirection mRotationDirection;
+        private int mInitialHeading, mDesiredHeading, mLastHeading;
+        private int mCurrentHeadingAdjustment = 0;
+        private int mDesiredHeadingAdjustment = 0;
+        private int mTotalDegrees;
+
+        public GyroReachedHeading(RobotDrivetrain.RotationDirection rotationDirection,
+                                  int initialHeading, int desiredHeading) {
+            mRotationDirection = rotationDirection;
+            mInitialHeading = mLastHeading = initialHeading;
+            mDesiredHeading = desiredHeading;
+
+            if (mRotationDirection == RobotDrivetrain.RotationDirection.LEFT &&
+                    mInitialHeading < mDesiredHeading) {
+                // Allow for zero-crossing anticlockwise 0 -> 359.
+                mCurrentHeadingAdjustment += 360;
+            }
+
+            if (mRotationDirection == RobotDrivetrain.RotationDirection.RIGHT &&
+                    mInitialHeading > mDesiredHeading) {
+                // Allow for zero-crossing clockwise 359 -> 0.
+                mDesiredHeadingAdjustment += 360;
+            }
+
+            mTotalDegrees = Math.abs((mInitialHeading+mCurrentHeadingAdjustment) -
+                    (mDesiredHeading+mDesiredHeadingAdjustment));
+        }
+
+        @Override
+        public double distance() {
+            int currentHeading = mGyroSensor.getHeading();
+
+            if (mRotationDirection == RobotDrivetrain.RotationDirection.LEFT) {
+                if (currentHeading > mLastHeading && currentHeading > 350)
+                    mCurrentHeadingAdjustment -= 360;
+            } else {
+                if (currentHeading < mLastHeading && currentHeading < 10)
+                    mDesiredHeadingAdjustment -= 360;
+            }
+
+            int distanceDegrees = (currentHeading+mCurrentHeadingAdjustment) -
+                    (mDesiredHeading+mDesiredHeadingAdjustment);
+
+            distanceDegrees *=
+                    (mRotationDirection == RobotDrivetrain.RotationDirection.LEFT) ? 1 : -1;
+
+            double distance;
+            if (distanceDegrees > 10)
+                distance = 1.0;
+            else if (distanceDegrees > 0)
+                distance = (double) distanceDegrees / 10;
+            else
+                distance = 0.0;
+
+            mOpMode.telemetry.addData("0. total", mTotalDegrees);
+            mOpMode.telemetry.addData("1. current", String.format(Locale.US, "%d + %d",
+                    currentHeading, mCurrentHeadingAdjustment));
+            mOpMode.telemetry.addData("2. desired", String.format(Locale.US, "%d + %d",
+                    mDesiredHeading, mDesiredHeadingAdjustment));
+            mOpMode.telemetry.addData("3. distance", distance);
+            mOpMode.telemetry.addData("4. degrees", distanceDegrees);
+            mOpMode.telemetry.update();
+
+            mLastHeading = currentHeading;
+            return distance;
+        }
+    }
+
     final private static double DRIVE_SLIPPAGE_FACTOR  = 1.00;
     final private static double STRAFE_SLIPPAGE_FACTOR = 1.08;
     final private static double ROTATE_SLIPPAGE_FACTOR = 1.00;
@@ -21,6 +101,9 @@ public class RobotechnixDemobot {
     LinearOpMode mOpMode;
     RobotDrivetrain mDrivetrain;
     GyroSensor mGyroSensor;
+    ModernRoboticsI2cCompassSensor mCompassSensor;
+    Servo mRangeServo;
+    AnalogInput mRangeSensor;
 
     final public static String LOG_TAG = "RobotechnixDemobot";
     public void info(String msg) {
@@ -38,7 +121,6 @@ public class RobotechnixDemobot {
             throw new StopImmediatelyException();
         return true;
     }
-
 
     private void initializeDrivetrain() {
         mDrivetrain = new RobotDrivetrain();
@@ -127,16 +209,29 @@ public class RobotechnixDemobot {
                 }}));
     }
 
+    private void initializeServos() {
+        mRangeServo = mOpMode.hardwareMap.servo.get("range_servo");
+        mRangeServo.setDirection(Servo.Direction.FORWARD);
+        mRangeServo.scaleRange(-1.0, +1.0);
+        mRangeServo.setPosition(0.5);
+    }
+
     private void initializeSensors() {
         mGyroSensor = mOpMode.hardwareMap.gyroSensor.get("gyro");
         mGyroSensor.calibrate();
         mOpMode.telemetry.addData(">", "Calibrating gyro...");
         mOpMode.telemetry.update();
         while (mGyroSensor.isCalibrating() && shouldKeepRunning());
+
+        mCompassSensor = mOpMode.hardwareMap.get(ModernRoboticsI2cCompassSensor.class, "compass");
+        mCompassSensor.setMode(CompassSensor.CompassMode.MEASUREMENT_MODE);
+
+        mRangeSensor = mOpMode.hardwareMap.analogInput.get("range");
     }
 
     public void initialize() {
         initializeDrivetrain();
+        initializeServos();
         initializeSensors();
 
         mOpMode.telemetry.addData(">", "Ready.");
@@ -163,13 +258,6 @@ public class RobotechnixDemobot {
         mDrivetrain.translate(angle, speed);
     }
 
-    class AnyMotorReachedTarget implements DistanceFromTarget {
-        @Override
-        public double distance() {
-            return mDrivetrain.minDistanceUntilAnyEncoderSatisfied();
-        }
-    }
-
     public void translateDistance(int angle, double speed, double distance) {
         info(String.format(Locale.US, "translateDistance(angle=%d, speed=%.2f, distance=%.2f)",
                 angle, speed, distance));
@@ -182,77 +270,30 @@ public class RobotechnixDemobot {
         mDrivetrain.rotate(direction, speed);
     }
 
-    private class GyroReachedHeading implements DistanceFromTarget {
-        private RobotDrivetrain.RotationDirection mRotationDirection;
-        private int mInitialHeading, mDesiredHeading, mLastHeading;
-        private int mCurrentHeadingAdjustment = 0;
-        private int mDesiredHeadingAdjustment = 0;
-        private int mTotalDegrees;
-
-        public GyroReachedHeading(RobotDrivetrain.RotationDirection rotationDirection,
-                                  int initialHeading, int desiredHeading) {
-            mRotationDirection = rotationDirection;
-            mInitialHeading = mLastHeading = initialHeading;
-            mDesiredHeading = desiredHeading;
-
-            if (mRotationDirection == RobotDrivetrain.RotationDirection.LEFT &&
-                    mInitialHeading < mDesiredHeading) {
-                // Allow for zero-crossing anticlockwise 0 -> 359.
-                mCurrentHeadingAdjustment += 360;
-            }
-
-            if (mRotationDirection == RobotDrivetrain.RotationDirection.RIGHT &&
-                    mInitialHeading > mDesiredHeading) {
-                // Allow for zero-crossing clockwise 359 -> 0.
-                mDesiredHeadingAdjustment += 360;
-            }
-
-            mTotalDegrees = Math.abs((mInitialHeading+mCurrentHeadingAdjustment) -
-                    (mDesiredHeading+mDesiredHeadingAdjustment));
-        }
-
-        @Override
-        public double distance() {
-            int currentHeading = mGyroSensor.getHeading();
-
-            if (mRotationDirection == RobotDrivetrain.RotationDirection.LEFT) {
-                if (currentHeading > mLastHeading && currentHeading > 350)
-                    mCurrentHeadingAdjustment -= 360;
-            } else {
-                if (currentHeading < mLastHeading && currentHeading < 10)
-                    mDesiredHeadingAdjustment -= 360;
-            }
-
-            int distanceDegrees = (currentHeading+mCurrentHeadingAdjustment) -
-                    (mDesiredHeading+mDesiredHeadingAdjustment);
-
-            distanceDegrees *=
-                    (mRotationDirection == RobotDrivetrain.RotationDirection.LEFT) ? 1 : -1;
-
-            double distance;
-            if (distanceDegrees > 10)
-                distance = 1.0;
-            else if (distanceDegrees > 0)
-                distance = (double) distanceDegrees / 10;
-            else
-                distance = 0.0;
-
-            mOpMode.telemetry.addData("0. total", mTotalDegrees);
-            mOpMode.telemetry.addData("1. current", String.format(Locale.US, "%d + %d",
-                    currentHeading, mCurrentHeadingAdjustment));
-            mOpMode.telemetry.addData("2. desired", String.format(Locale.US, "%d + %d",
-                    mDesiredHeading, mDesiredHeadingAdjustment));
-            mOpMode.telemetry.addData("3. distance", distance);
-            mOpMode.telemetry.addData("4. degrees", distanceDegrees);
-            mOpMode.telemetry.update();
-
-            mLastHeading = currentHeading;
-            return distance;
-        }
-    }
     public void rotateToHeading(RobotDrivetrain.RotationDirection direction,
                                 double speed, int heading) {
+        int startHeading = mGyroSensor.getHeading();
         rotate(direction, speed);
-        waitForTarget(new GyroReachedHeading(direction, mGyroSensor.getHeading(), heading));
+        waitForTarget(new GyroReachedHeading(direction, startHeading, heading));
+    }
+
+    public void rotateDegrees(RobotDrivetrain.RotationDirection direction,
+                              double speed, int degrees) {
+        int startHeading = mGyroSensor.getHeading();
+        int desiredHeading;
+
+        if(direction == RobotDrivetrain.RotationDirection.LEFT)
+            desiredHeading = startHeading - degrees;
+        else
+            desiredHeading = startHeading + degrees;
+
+        desiredHeading %= 360;
+
+        rotate(direction, speed);
+        waitForTarget(new GyroReachedHeading(direction, startHeading, desiredHeading));
+    }
+
+    public void positionRangeServo(double position) {
+        mRangeServo.setPosition(position-0.03);
     }
 }
