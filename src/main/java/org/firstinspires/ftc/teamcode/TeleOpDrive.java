@@ -1,12 +1,3 @@
-/*
- * Copyright 2017, FTC Team 11574.
- *
- * A TeleOp program to allow control of the robot via a USB Gamepad.
- *
- * This program was initially based on code that was:
- *   Copyright (c) 2014, 2015 Qualcomm Technologies Inc
- */
-
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
