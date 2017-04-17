@@ -11,6 +11,8 @@ import com.qualcomm.robotcore.hardware.GyroSensor;
 import com.qualcomm.robotcore.hardware.IrSeekerSensor;
 import com.qualcomm.robotcore.hardware.Servo;
 
+import org.firstinspires.ftc.robotcore.external.Telemetry;
+
 import java.util.HashMap;
 import java.util.Locale;
 
@@ -34,14 +36,14 @@ class RobotechnixDemobot {
     private class GyroHeading implements HeadingProvidingDevice {
         @Override
         public int heading() {
-            return mGyroSensor.getHeading();
+            return mRawGyroSensor.getHeading();
         }
     }
 
     private class CompassHeading implements HeadingProvidingDevice {
         @Override
         public int heading() {
-            return (int) mCompassSensor.getDirection();
+            return (int) mRawCompassSensor.getDirection();
         }
     }
 
@@ -120,12 +122,12 @@ class RobotechnixDemobot {
     private class IrSeekerPointedAtBeacon implements DistanceFromTarget {
         double mInitialAngle;
         IrSeekerPointedAtBeacon() {
-            mInitialAngle = mIrSeekerSensor.getAngle();
+            mInitialAngle = mRawIrSeekerSensor.getAngle();
         }
 
         @Override
         public double distance() {
-            double angle = mIrSeekerSensor.getAngle();
+            double angle = mRawIrSeekerSensor.getAngle();
             mOpMode.telemetry.addData("angle", angle);
             mOpMode.telemetry.update();
 
@@ -142,7 +144,7 @@ class RobotechnixDemobot {
     private class IrSeekerBeaconInRange implements DistanceFromTarget {
         @Override
         public double distance() {
-            return mIrSeekerSensor.getStrength() > 20 ? 0.0 : 1.0;
+            return mRawIrSeekerSensor.getStrength() > 20 ? 0.0 : 1.0;
         }
     }
 
@@ -256,6 +258,8 @@ class RobotechnixDemobot {
                     put(mBL, rotate.power(+1.0));
                     put(mBR, rotate.power(-1.0));
                 }}));
+
+        mDrivetrain.run();
     }
 
     private Servo mRangeServo;
@@ -267,28 +271,91 @@ class RobotechnixDemobot {
         mRangeServo.setPosition(0.5);
     }
 
-    private GyroSensor mGyroSensor;
-    private ModernRoboticsI2cCompassSensor mCompassSensor;
-    private AnalogInput mRangeSensor;
-    private IrSeekerSensor mIrSeekerSensor;
+    SensorCollector mSensorCollector;
+
+    GyroSensor mRawGyroSensor;
+    Sensor<Double> mGyroSensor;
+
+    ModernRoboticsI2cCompassSensor mRawCompassSensor;
+    Sensor<Double> mCompassSensor;
+
+    AnalogInput mRawRangeSensor;
+    Sensor<Double> mRangeSensor;
+
+    IrSeekerSensor mRawIrSeekerSensor;
+    Sensor<Double> mIrSeekerAngleSensor;
+    Sensor<Double> mIrSeekerStrengthSensor;
 
     private void initializeSensors() {
-        mGyroSensor = mOpMode.hardwareMap.gyroSensor.get("gyro");
-        mGyroSensor.calibrate();
+        mSensorCollector = new SensorCollector(1);
+
+        mRawGyroSensor = mOpMode.hardwareMap.gyroSensor.get("gyro");
+        mRawGyroSensor.calibrate();
+
+        mGyroSensor = new Sensor<>(new SlidingWindowFilteredDoubleSensorData(10,
+                new SensorDataProvider<Double>() {
+            @Override
+            public Double values() {
+                return (double) mRawGyroSensor.getHeading();
+            }
+        }));
+        mSensorCollector.addSensor(1, mGyroSensor, null);
 
         mOpMode.telemetry.addData(">", "Calibrating gyro...");
         mOpMode.telemetry.update();
 
-        mCompassSensor = mOpMode.hardwareMap.get(ModernRoboticsI2cCompassSensor.class, "compass");
-        mCompassSensor.setMode(CompassSensor.CompassMode.MEASUREMENT_MODE);
+        mRawCompassSensor = mOpMode.hardwareMap.get(
+                ModernRoboticsI2cCompassSensor.class, "compass");
+        mRawCompassSensor.setMode(CompassSensor.CompassMode.MEASUREMENT_MODE);
 
-        mRangeSensor = mOpMode.hardwareMap.analogInput.get("range");
+        mCompassSensor = new Sensor<Double>(new SlidingWindowFilteredDoubleSensorData(10,
+                new SensorDataProvider<Double>() {
+                    @Override
+                    public Double values() {
+                        return mRawCompassSensor.getDirection();
+                    }
+                }));
 
-        mIrSeekerSensor = mOpMode.hardwareMap.irSeekerSensor.get("ir");
+        mSensorCollector.addSensor(1, mCompassSensor, null);
+
+        mRawRangeSensor = mOpMode.hardwareMap.analogInput.get("range");
+
+        mRangeSensor = new Sensor<Double>(new SlidingWindowFilteredDoubleSensorData(10,
+                new SensorDataProvider<Double>() {
+                    @Override
+                    public Double values() {
+                        return mRawRangeSensor.getVoltage();
+                    }
+                }));
+        mSensorCollector.addSensor(1, mRangeSensor, null);
+
+        mRawIrSeekerSensor = mOpMode.hardwareMap.irSeekerSensor.get("ir");
+
+        mIrSeekerAngleSensor = new Sensor<>(new SlidingWindowFilteredDoubleSensorData(50,
+                new SensorDataProvider<Double>() {
+                    @Override
+                    public Double values() {
+                        return mRawIrSeekerSensor.getAngle();
+                    }
+                }));
+
+        mSensorCollector.addSensor(1, mIrSeekerAngleSensor, null);
+
+        mIrSeekerStrengthSensor = new Sensor<>(new SlidingWindowFilteredDoubleSensorData(50,
+                new SensorDataProvider<Double>() {
+                    @Override
+                    public Double values() {
+                        return mRawIrSeekerSensor.getStrength();
+                    }
+                }));
+
+        mSensorCollector.addSensor(1, mIrSeekerStrengthSensor, null);
 
         // Wait for gyro calibration to finish before returning.
-        while (shouldKeepRunning() && mGyroSensor.isCalibrating())
+        while (shouldKeepRunning() && mRawGyroSensor.isCalibrating())
             mOpMode.idle();
+
+        mSensorCollector.run();
     }
 
     void initialize() {
@@ -296,39 +363,40 @@ class RobotechnixDemobot {
         initializeServos();
         initializeSensors();
 
-        mOpMode.telemetry.addData(">", "Ready.");
+        mOpMode.telemetry.addData(">", "Ready!");
         mOpMode.telemetry.update();
     }
 
     void stop() {
-        info("stop");
-        mDrivetrain.stop();
+        if (!mDrivetrain.isStoppedAllMotors()) {
+            rotate(null, 0.0);
+            translate(0, 0.0);
+        }
     }
 
     private void waitForTarget(DistanceFromTarget distanceFromTarget) {
         double distance;
         do {
             distance = distanceFromTarget.distance();
-            //info(String.format(Locale.US, "distance=%.2f", distance));
             if (distance < 1.0)
                 mDrivetrain.adjustSpeed(distance);
         } while (shouldKeepRunning() && distance > 0.0);
     }
 
     void translate(int angle, double speed) {
-        info(String.format(Locale.US, "translate(angle=%d, speed=%.2f)", angle, speed));
+        //info(String.format(Locale.US, "translate(angle=%d, speed=%.2f)", angle, speed));
         mDrivetrain.translate(angle, speed);
     }
 
     void translateDistance(int angle, double speed, double distance) {
-        info(String.format(Locale.US, "translateDistance(angle=%d, speed=%.2f, distance=%.2f)",
-                angle, speed, distance));
+        //info(String.format(Locale.US, "translateDistance(angle=%d, speed=%.2f, distance=%.2f)",
+         //       angle, speed, distance));
         mDrivetrain.translateDistance(angle, speed, distance);
         waitForTarget(new AnyMotorReachedTarget());
     }
 
     void rotate(RobotDrivetrain.RotationDirection direction, double speed) {
-        info(String.format(Locale.US, "rotate(direction=%s, speed=%.2f)", direction, speed));
+        //info(String.format(Locale.US, "rotate(direction=%s, speed=%.2f)", direction, speed));
         mDrivetrain.rotate(direction, speed);
     }
 
@@ -358,7 +426,7 @@ class RobotechnixDemobot {
     }
 
     void rotateToIrBeacon(double speed) {
-        double angle = mIrSeekerSensor.getAngle();
+        double angle = mRawIrSeekerSensor.getAngle();
 
         if (Math.abs(angle) < 2) {
             return;

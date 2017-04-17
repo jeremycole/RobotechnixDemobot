@@ -2,66 +2,78 @@ package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 
+import java.util.Timer;
+import java.util.TimerTask;
+
 @Autonomous(name = "AutonomousBallSeeker")
 @SuppressWarnings("unused")
 public class AutonomousBallSeeker extends RobotechnixDemobotOpMode {
-    private int[] irSeekerAngle_history;
-    private int irSeekerAngle_index = 0;
-    private int irSeekerAngle() {
-        int angle = (int) robot.mIrSeekerSensor.getAngle();
+    static double targetRangeToBall = 0.5;
+    static double maxRotationSpeed = 0.4;
+    static double maxTranslationSpeed = 0.8;
 
-        if (irSeekerAngle_history == null) {
-            irSeekerAngle_history = new int[100];
-            for (int i=0; i < irSeekerAngle_history.length; i++) {
-                irSeekerAngle_history[i] = angle;
-            }
+    public void followTheBall() {
+        double angle    = robot.mIrSeekerAngleSensor.getData();
+        double strength = robot.mIrSeekerStrengthSensor.getData();
+
+        telemetry.addData("angle", angle);
+        telemetry.addData("strength", strength);
+        telemetry.update();
+
+        if (!robot.mRawIrSeekerSensor.signalDetected() || strength < 0.03) {
+            robot.stop();
+            return;
         }
 
-        irSeekerAngle_history[irSeekerAngle_index] = angle;
-        irSeekerAngle_index = (irSeekerAngle_index+1) % irSeekerAngle_history.length;
+        if (Math.abs(angle) > 3) {
+            RobotDrivetrain.RotationDirection direction;
+            if (angle < 0)
+                direction = RobotDrivetrain.RotationDirection.LEFT;
+            else
+                direction = RobotDrivetrain.RotationDirection.RIGHT;
 
-        int sum = 0;
-        for (int cur : irSeekerAngle_history) {
-            sum += cur;
+            double speed = Math.min(maxRotationSpeed,
+                    maxRotationSpeed * ((double) Math.abs(angle) / 100.0));
+            //speed = speed < 0.10 ? 0.0 : speed;
+            robot.rotate(direction, speed);
+        } else {
+            robot.rotate(null, 0.0);
         }
 
-        return sum / irSeekerAngle_history.length;
+        if (strength < targetRangeToBall) {
+            double speed = (targetRangeToBall - strength) / targetRangeToBall;
+            speed *= maxTranslationSpeed;
+            //speed = speed < 0.02 ? 0.0 : speed;
+            robot.translate(0, speed);
+        } else {
+            robot.translate(0, 0.0);
+        }
     }
+
+    Timer mTimer;
+    TimerTask mTimerTask;
 
     @Override
     public void robotRun() {
+        mTimer = new Timer();
+
+        mTimerTask = new TimerTask() {
+            @Override
+            public void run() {
+                followTheBall();
+            }
+        };
+
+        mTimer.schedule(mTimerTask, 0, 1);
+
         while(shouldKeepRunning()) {
-            int angle = irSeekerAngle();
-            double strength = robot.mIrSeekerSensor.getStrength();
-
-            telemetry.addData("angle", angle);
-            telemetry.addData("strength", strength);
-            telemetry.update();
-
-            if (!robot.mIrSeekerSensor.signalDetected()) {
-                robot.stop();
-                continue;
-            }
-
-            if (Math.abs(angle) > 10) {
-                RobotDrivetrain.RotationDirection direction;
-                if (angle < 0)
-                    direction = RobotDrivetrain.RotationDirection.LEFT;
-                else
-                    direction = RobotDrivetrain.RotationDirection.RIGHT;
-
-                double speed = Math.min(0.4, 0.4 * (double) Math.abs(angle) / 100.0);
-                speed = speed < 0.05 ? 0.0 : speed;
-                robot.rotate(direction, speed);
-            }
-
-            if (strength < 0.5 && Math.abs(angle) < 20) {
-                double speed = (0.5 - strength);
-                speed = speed < 0.05 ? 0.0 : speed;
-                robot.translate(0, speed);
-            }
+            idle();
         }
+    }
 
+    @Override
+    public void robotStop() {
+        mTimer.cancel();
         robot.stop();
     }
 }

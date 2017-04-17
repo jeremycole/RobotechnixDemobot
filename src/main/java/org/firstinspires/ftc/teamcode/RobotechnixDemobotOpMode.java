@@ -14,8 +14,10 @@ public class RobotechnixDemobotOpMode extends LinearOpMode {
     // If stop was requested, throw a StopImmediatelyException which will be
     // caught by runOpMode to stop the robot immediately.
     boolean shouldKeepRunning() {
-        if(isStarted() && isStopRequested())
+        if(isStarted() && isStopRequested()) {
+            robotStop();
             throw new StopImmediatelyException();
+        }
         return true;
     }
 
@@ -31,6 +33,10 @@ public class RobotechnixDemobotOpMode extends LinearOpMode {
     }
 
     public void robotRun() {
+    }
+
+    public void robotStop() {
+        robot.stop();
     }
 
     @Override
@@ -53,13 +59,13 @@ public class RobotechnixDemobotOpMode extends LinearOpMode {
             info("Calling robotRun()...");
             robotRun();
 
-            // Stop just in case robotRun did not.
-            robot.stop();
+            info("Calling robotStop()...");
+            robotStop();
         } catch (Throwable t) {
             // Expected due to timer expiration or "Stop" button pressed.
             if (t instanceof StopImmediatelyException) {
                 info("Stop requested!");
-                robot.stop();
+                robotStop();
                 return;
             }
 

@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode;
 
+import android.util.ArrayMap;
 import android.util.Log;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -9,6 +10,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 
 @SuppressWarnings("unused")
 class RobotDrivetrain {
@@ -119,6 +122,9 @@ class RobotDrivetrain {
         }
     }
 
+    Timer mDrivetrainTimer;
+    TimerTask mDrivetrainTimerTask;
+
     private Map<String, RobotMotor> mRobotMotors;
     private List<Translation> mTranslations;
     private List<Rotation> mRotations;
@@ -139,6 +145,23 @@ class RobotDrivetrain {
         mRobotMotors = new HashMap<>();
         mTranslations = new ArrayList<>();
         mRotations = new ArrayList<>();
+    }
+
+    void run() {
+        mDrivetrainTimer = new Timer();
+        mDrivetrainTimerTask = new TimerTask() {
+            @Override
+            public void run() {
+                tick();
+            }
+        };
+
+        mDrivetrainTimer.schedule(mDrivetrainTimerTask, 0, 1);
+    }
+
+    void stop() {
+        stopAllMotors();
+        mDrivetrainTimer.cancel();
     }
 
     int getMaxSpeed() {
@@ -198,19 +221,28 @@ class RobotDrivetrain {
         mRotations.add(rotation);
     }
 
-    private void normalizeDrive(Map<RobotMotor, DriveParameters> drive, double factor) {
+    private Map<RobotMotor, DriveParameters> normalizeDrive(
+            Map<RobotMotor, DriveParameters> drive, double factor) {
+        Map<RobotMotor, DriveParameters> normalizedDrive = new ArrayMap<>();
+
         for (RobotMotor motor : drive.keySet()) {
             DriveParameters dp = drive.get(motor);
-            dp.setPower(dp.getPower() * factor);
+            normalizedDrive.put(motor,
+                    new DriveParameters(dp.getPower() * factor, dp.getSlippage()));
         }
+
+        return normalizedDrive;
     }
 
-    private Map<RobotMotor, DriveParameters> blendDrives(Map<RobotMotor, DriveParameters> aDrive,
-                                                double aWeight,
-                                                Map<RobotMotor, DriveParameters> bDrive,
-                                                double bWeight) {
+    synchronized private Map<RobotMotor, DriveParameters> blendDrives(
+            Map<RobotMotor, DriveParameters> aDrive,
+            double aWeight,
+            Map<RobotMotor, DriveParameters> bDrive,
+            double bWeight) {
+
         double maxPower = 0.0;
         Map<RobotMotor, DriveParameters> drive = new HashMap<>();
+
         for (RobotMotor motor : aDrive.keySet()) {
             double aPower = aDrive.get(motor).getPower() * aWeight;
             double bPower = bDrive.get(motor).getPower() * bWeight;
@@ -225,12 +257,12 @@ class RobotDrivetrain {
         }
 
         if (maxPower > 1.0)
-            normalizeDrive(drive, 1.0 / maxPower);
+            drive = normalizeDrive(drive, 1.0 / maxPower);
 
         return drive;
     }
 
-    Map<RobotMotor, DriveParameters> getTranslationDrive(int angle) {
+    Map<RobotMotor, DriveParameters> makeTranslationDrive(int angle) {
         int l=-1, h;
         for (int i = 0; i < mTranslations.size(); i++) {
             if (angle >= mTranslations.get(i).getAngle()) {
@@ -239,7 +271,7 @@ class RobotDrivetrain {
         }
 
         if (l == -1)
-            throw new RuntimeException("Couldn't find translation for angle");
+            throw new RuntimeException("Couldn't find translation for angle " + angle);
 
         h = (l+1) % mTranslations.size();
 
@@ -252,14 +284,14 @@ class RobotDrivetrain {
         double lWeight = 1.0 - (angle - lTranslation.getAngle()) / lhDistance;
         double hWeight = 1.0 - lWeight;
 
-        Log.i("RobotDrivetrain", String.format(Locale.US,
-                "getTranslationDrive: angle=%d, l=%d, h=%d, lWeight=%.2f, hWeight=%.2f, lhDistance=%.2f",
-                angle, l, h, lWeight, hWeight, lhDistance));
+        //Log.i("RobotDrivetrain", String.format(Locale.US,
+        //        "makeTranslationDrive: angle=%d, l=%d, h=%d, lWeight=%.2f, hWeight=%.2f, lhDistance=%.2f",
+        //        angle, l, h, lWeight, hWeight, lhDistance));
 
         return blendDrives(lTranslation.getDrive(), lWeight, hTranslation.getDrive(), hWeight);
     }
 
-    Map<RobotMotor, DriveParameters> getRotationDrive(RotationDirection direction) {
+    Map<RobotMotor, DriveParameters> makeRotationDrive(RotationDirection direction) {
         for (Rotation rotation : mRotations) {
             if (rotation.getRotationDirection() == direction)
                 return rotation.getDrive();
@@ -285,18 +317,44 @@ class RobotDrivetrain {
                 motor.getDcMotor().getTargetPosition());
     }
 
-    void stop() {
-        mTranslationDrive = null;
-        mTranslationSpeed = 0.0;
-        mRotationDrive = null;
-        mRotationSpeed = 0.0;
-        mBlendedDrive = null;
+    synchronized public Map<RobotMotor, DriveParameters> getTranslationDrive() {
+        return mTranslationDrive;
+    }
+
+    synchronized public void setTranslationDrive(Map<RobotMotor, DriveParameters> translationDrive) {
+        mTranslationDrive = translationDrive;
+    }
+
+    synchronized public Map<RobotMotor, DriveParameters> getRotationDrive() {
+        return mRotationDrive;
+    }
+
+    synchronized public void setRotationDrive(Map<RobotMotor, DriveParameters> rotationDrive) {
+        mRotationDrive = rotationDrive;
+    }
+
+    synchronized public Map<RobotMotor, DriveParameters> getBlendedDrive() {
+        return mBlendedDrive;
+    }
+
+    synchronized public void setBlendedDrive(Map<RobotMotor, DriveParameters> blendedDrive) {
+        mBlendedDrive = blendedDrive;
+    }
+
+    boolean isStoppedAllMotors() {
+        return getBlendedDrive() == null;
+    }
+
+    void stopAllMotors() {
+        setTranslationDrive(null);
+        setRotationDrive(null);
+        setBlendedDrive(null);
         for (RobotMotor motor : mRobotMotors.values()) {
             motor.stop();
         }
     }
 
-    private void setRobotMotorsDistance(Map<RobotMotor, DriveParameters> drive, double distance) {
+    synchronized private void setRobotMotorsDistance(Map<RobotMotor, DriveParameters> drive, double distance) {
         for (RobotMotor motor : drive.keySet()) {
             motor.setTargetPositionOffset(
                     convertDistanceToEncoderCounts(
@@ -305,7 +363,12 @@ class RobotDrivetrain {
         }
     }
 
-    private void setRobotMotorsPower(Map<RobotMotor, DriveParameters> drive) {
+    synchronized private void setRobotMotorsPower(Map<RobotMotor, DriveParameters> drive) {
+        if (drive == null) {
+            stopAllMotors();
+            return;
+        }
+
         for (RobotMotor motor : drive.keySet()) {
             motor.setPower(drive.get(motor).getPower());
         }
@@ -329,7 +392,7 @@ class RobotDrivetrain {
     }
 
     void adjustSpeed(double factor) {
-        normalizeDrive(mBlendedDrive, factor);
+        mBlendedDrive = normalizeDrive(mBlendedDrive, factor);
         setRobotMotorsPower(mBlendedDrive);
     }
 
@@ -337,9 +400,9 @@ class RobotDrivetrain {
         if (mTranslationDrive != null && mRotationDrive != null)
             return blendDrives(mTranslationDrive, mTranslationSpeed, mRotationDrive, mRotationSpeed);
         else if (mTranslationDrive != null)
-            return mTranslationDrive;
+            return normalizeDrive(mTranslationDrive, mTranslationSpeed);
         else if (mRotationDrive != null)
-            return mRotationDrive;
+            return normalizeDrive(mRotationDrive, mRotationSpeed);
 
         return null;
     }
@@ -347,25 +410,30 @@ class RobotDrivetrain {
     void translate(int angle, double speed) {
         mTranslationSpeed = speed;
         mTranslationAngle = angle;
-        mTranslationDrive = getTranslationDrive(angle);
-        mBlendedDrive = blendTranslationAndRotationDrives();
-        setRobotMotorsPower(mBlendedDrive);
+        if (speed > 0.0)
+            setTranslationDrive(makeTranslationDrive(angle));
+        else
+            setTranslationDrive(null);
     }
 
     void translateDistance(int angle, double speed, double distance) {
         mTranslationSpeed = speed;
         mTranslationAngle = angle;
-        mTranslationDrive = getTranslationDrive(angle);
-        mBlendedDrive = blendTranslationAndRotationDrives();
+        setTranslationDrive(makeTranslationDrive(angle));
         setRobotMotorsDistance(mTranslationDrive, distance);
-        setRobotMotorsPower(mBlendedDrive);
     }
 
     void rotate(RotationDirection direction, double speed) {
         mRotationSpeed = speed;
         mRotationDirection = direction;
-        mRotationDrive = getRotationDrive(direction);
-        mBlendedDrive = blendTranslationAndRotationDrives();
-        setRobotMotorsPower(mBlendedDrive);
+        if (speed > 0.0)
+            setRotationDrive(makeRotationDrive(direction));
+        else
+            setRotationDrive(null);
+    }
+
+    void tick() {
+        setBlendedDrive(blendTranslationAndRotationDrives());
+        setRobotMotorsPower(getBlendedDrive());
     }
 }

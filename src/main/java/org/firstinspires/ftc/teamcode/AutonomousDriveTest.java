@@ -7,7 +7,10 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 public class AutonomousDriveTest extends RobotechnixDemobotOpMode {
     @Override
     public void robotRun() {
-        robot.translateDistance(0, 0.5, 30);
+        robot.translate(0, 0.2);
+        while(shouldKeepRunning()) {
+            idle();
+        }
         robot.stop();
     }
 }
