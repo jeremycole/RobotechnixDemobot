@@ -7,6 +7,18 @@ import org.firstinspires.ftc.robotcore.external.Telemetry;
 @TeleOp(name = "TeleOpDrive", group = "TeleOp")
 @SuppressWarnings({"unused", "WeakerAccess"})
 public class TeleOpDrive extends RobotechnixDemobotOpMode {
+    private int mod(final int n, final int d) {
+        return ((n % d) + d) % d;
+    }
+
+    private int getJoystickAngle(final double x, final double y) {
+        return mod((int)Math.toDegrees(Math.atan2(x, -y)), 360);
+    }
+
+    private double getJoystickPower(final double x, final double y) {
+        return Math.sqrt(Math.pow(Math.abs(x), 2) + Math.pow(Math.abs(y), 2));
+    }
+
     @Override
     public void robotRun() {
         double motorPower = 1.0;
@@ -25,13 +37,12 @@ public class TeleOpDrive extends RobotechnixDemobotOpMode {
             robot.positionRangeServo((-lt + rt + 1.0) / 2.0);
 
             if (x2 < 0)
-                robot.rotate(RobotDrivetrain.RotationDirection.LEFT, Math.abs(x2));
+                robot.rotate(RobotDrivetrain.RotationDirection.LEFT, -x2);
             else
-                robot.rotate(RobotDrivetrain.RotationDirection.RIGHT, Math.abs(x2));
+                robot.rotate(RobotDrivetrain.RotationDirection.RIGHT, x2);
 
-            // Needs some tuning for direction, probably 90° off right now.
-            int angle = ((((int)Math.toDegrees(Math.atan(y1/x1))) % 360) + 360) % 360;
-            double power = Math.sqrt(Math.pow(Math.abs(x1), 2) + Math.pow(Math.abs(y1), 2));
+            int angle = getJoystickAngle(x1, y1);
+            double power = getJoystickPower(x1, y1);
 
             robot.translate(angle, power);
 
