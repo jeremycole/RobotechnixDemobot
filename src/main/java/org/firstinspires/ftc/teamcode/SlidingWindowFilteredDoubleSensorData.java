@@ -11,20 +11,23 @@ public class SlidingWindowFilteredDoubleSensorData implements SensorDataProvider
         mSensorDataProvider = sensorDataProvider;
         mWindowSize = windowSize;
         mData = new double[mWindowSize];
+
+        // Initially populate the array with the current value.
+        populate(mSensorDataProvider.value());
     }
 
-    void populate(double value) {
+    synchronized private void populate(double value) {
         for (int i=0; i < mData.length; i++)
             mData[i] = value;
     }
 
-    void integrate(double value) {
+    synchronized private void integrate(double value) {
         mData[mIndex] = value;
         mIndex = (mIndex+1) % mData.length;
         mValueCache = null;
     }
 
-    double average() {
+    synchronized private double average() {
         double sum = 0.0;
         for (double value : mData) {
             sum += value;
@@ -33,8 +36,8 @@ public class SlidingWindowFilteredDoubleSensorData implements SensorDataProvider
     }
 
     @Override
-    public Double values() {
-        integrate(mSensorDataProvider.values());
+    public Double value() {
+        integrate(mSensorDataProvider.value());
         return mValueCache = average();
     }
 }

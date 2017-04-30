@@ -9,10 +9,10 @@ public class Sensor<T> {
     }
 
     synchronized void collect() {
-        mData = mSensorDataProvider.values();
+        mData = mSensorDataProvider.value();
     }
 
-    synchronized T getData() {
+    synchronized T value() {
         return mData;
     }
 }

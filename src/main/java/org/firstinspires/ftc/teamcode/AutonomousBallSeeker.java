@@ -13,15 +13,15 @@ public class AutonomousBallSeeker extends RobotechnixDemobotOpMode {
     static double maxTranslationSpeed = 0.8;
 
     public void followTheBall() {
-        double angle    = robot.mIrSeekerAngleSensor.getData();
-        double strength = robot.mIrSeekerStrengthSensor.getData();
+        double angle    = robot.mIrSeekerAngleSensor.value();
+        double strength = robot.mIrSeekerStrengthSensor.value();
 
         telemetry.addData("angle", angle);
         telemetry.addData("strength", strength);
         telemetry.update();
 
         if (!robot.mRawIrSeekerSensor.signalDetected() || strength < 0.03) {
-            robot.stop();
+            robot.shutdown();
             return;
         }
 
@@ -33,8 +33,7 @@ public class AutonomousBallSeeker extends RobotechnixDemobotOpMode {
                 direction = RobotDrivetrain.RotationDirection.RIGHT;
 
             double speed = Math.min(maxRotationSpeed,
-                    maxRotationSpeed * ((double) Math.abs(angle) / 100.0));
-            //speed = speed < 0.10 ? 0.0 : speed;
+                    maxRotationSpeed * (Math.abs(angle) / 100.0));
             robot.rotate(direction, speed);
         } else {
             robot.rotate(null, 0.0);
@@ -43,7 +42,6 @@ public class AutonomousBallSeeker extends RobotechnixDemobotOpMode {
         if (strength < targetRangeToBall) {
             double speed = (targetRangeToBall - strength) / targetRangeToBall;
             speed *= maxTranslationSpeed;
-            //speed = speed < 0.02 ? 0.0 : speed;
             robot.translate(0, speed);
         } else {
             robot.translate(0, 0.0);
@@ -56,14 +54,12 @@ public class AutonomousBallSeeker extends RobotechnixDemobotOpMode {
     @Override
     public void robotRun() {
         mTimer = new Timer();
-
         mTimerTask = new TimerTask() {
             @Override
             public void run() {
                 followTheBall();
             }
         };
-
         mTimer.schedule(mTimerTask, 0, 1);
 
         while(shouldKeepRunning()) {
@@ -73,7 +69,11 @@ public class AutonomousBallSeeker extends RobotechnixDemobotOpMode {
 
     @Override
     public void robotStop() {
-        mTimer.cancel();
-        robot.stop();
+        if (mTimer != null) {
+            mTimer.cancel();
+            mTimer = null;
+        }
+
+        robot.shutdown();
     }
 }

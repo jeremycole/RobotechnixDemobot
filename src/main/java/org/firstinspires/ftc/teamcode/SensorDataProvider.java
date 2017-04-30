@@ -1,5 +1,5 @@
 package org.firstinspires.ftc.teamcode;
 
 interface SensorDataProvider<T> {
-    T values();
+    T value();
 }

@@ -15,13 +15,12 @@ public class TeleOpDrive extends RobotechnixDemobotOpMode {
         return mod((int)Math.toDegrees(Math.atan2(x, -y)), 360);
     }
 
-    private double getJoystickPower(final double x, final double y) {
+    private double getJoyStickMagnitude(final double x, final double y) {
         return Math.sqrt(Math.pow(Math.abs(x), 2) + Math.pow(Math.abs(y), 2));
     }
 
     @Override
     public void robotRun() {
-        double motorPower = 1.0;
         Telemetry.Item mTelemetryGyroItem = telemetry.addData("1. gyro", null);
         Telemetry.Item mTelemetryIrSeekerItem = telemetry.addData("2. ir", null);
         Telemetry.Item mTelemetryAngle = telemetry.addData("3. angle", null);
@@ -35,19 +34,23 @@ public class TeleOpDrive extends RobotechnixDemobotOpMode {
             double rt = gamepad1.right_trigger;
 
             robot.positionRangeServo((-lt + rt + 1.0) / 2.0);
+            if(gamepad1.a)
+                robot.positionClawServo(1.0);
+            else
+                robot.positionClawServo(0.0);
 
             if (x2 < 0)
                 robot.rotate(RobotDrivetrain.RotationDirection.LEFT, -x2);
             else
                 robot.rotate(RobotDrivetrain.RotationDirection.RIGHT, x2);
 
-            int angle = getJoystickAngle(x1, y1);
-            double power = getJoystickPower(x1, y1);
+            int angle    = getJoystickAngle(x1, y1);
+            double power = getJoyStickMagnitude(x1, y1);
 
             robot.translate(angle, power);
 
-            mTelemetryGyroItem.setValue(robot.mGyroSensor.getData());
-            mTelemetryIrSeekerItem.setValue(robot.mIrSeekerAngleSensor.getData());
+            mTelemetryGyroItem.setValue(robot.mGyroSensor.value());
+            mTelemetryIrSeekerItem.setValue(robot.mIrSeekerAngleSensor.value());
             mTelemetryAngle.setValue(angle);
             mTelemetryPower.setValue(power);
             telemetry.update();

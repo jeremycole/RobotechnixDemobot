@@ -11,8 +11,8 @@ public class RobotechnixDemobotOpMode extends LinearOpMode {
         Log.i(LOG_TAG, msg);
     }
 
-    // If stop was requested, throw a StopImmediatelyException which will be
-    // caught by runOpMode to stop the robot immediately.
+    // If shutdown was requested, throw a StopImmediatelyException which will be
+    // caught by runOpMode to shutdown the robot immediately.
     boolean shouldKeepRunning() {
         if(isStarted() && isStopRequested()) {
             robotStop();
@@ -22,7 +22,7 @@ public class RobotechnixDemobotOpMode extends LinearOpMode {
     }
 
     private void robotInitialize() {
-        gamepad1.setJoystickDeadzone(0.05f);
+        gamepad1.setJoystickDeadzone(0.01f);
 
         robot.initialize();
     }
@@ -36,7 +36,7 @@ public class RobotechnixDemobotOpMode extends LinearOpMode {
     }
 
     public void robotStop() {
-        robot.stop();
+        robot.shutdown();
     }
 
     @Override
@@ -50,7 +50,7 @@ public class RobotechnixDemobotOpMode extends LinearOpMode {
             info("Calling robotWaitForStart()...");
             robotWaitForStart();
 
-            // Exit immediately if stop was pressed, otherwise continue.
+            // Exit immediately if shutdown was pressed, otherwise continue.
             if (!isStarted() || isStopRequested()) {
                 info("Stop requested!");
                 return;
@@ -64,8 +64,7 @@ public class RobotechnixDemobotOpMode extends LinearOpMode {
         } catch (Throwable t) {
             // Expected due to timer expiration or "Stop" button pressed.
             if (t instanceof StopImmediatelyException) {
-                info("Stop requested!");
-                robotStop();
+                info("Stop was requested!");
                 return;
             }
 
@@ -77,6 +76,10 @@ public class RobotechnixDemobotOpMode extends LinearOpMode {
             }
 
             throw new RuntimeException(t);
+        } finally {
+            // Stop the robot, as we're exiting either way.
+            info("Calling robotStop() in finally block...");
+            robotStop();
         }
     }
 

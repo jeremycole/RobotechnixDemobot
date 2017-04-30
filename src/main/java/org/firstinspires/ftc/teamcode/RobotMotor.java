@@ -49,28 +49,8 @@ class RobotMotor {
         mDcMotor.setPower(power);
     }
 
-    void setTargetPositionOffset(int targetPositionOffset) {
-        mDcMotor.setTargetPosition(mDcMotor.getCurrentPosition() + targetPositionOffset);
-        Log.i("RobotMotor", String.format(Locale.US, "%s.setTargetPositionOffset(targetPositionOffset=%d) -> getCurrentPosition=%d, getTargetPosition=%d",
-                this.getName(), targetPositionOffset, mDcMotor.getCurrentPosition(), mDcMotor.getTargetPosition()));
-    }
-
-    boolean isEncoderSatisfied() {
-        if (mDcMotor.getPower() == 0.0)
-            return true;
-        else if (mDcMotor.getPower() > 0.0)
-            return mDcMotor.getCurrentPosition() >= mDcMotor.getTargetPosition();
-        else
-            return mDcMotor.getCurrentPosition() <= mDcMotor.getTargetPosition();
-    }
-
-    double distanceUntilEncoderSatisfied() {
-        double delta = Math.abs(mDcMotor.getCurrentPosition() - mDcMotor.getTargetPosition());
-
-        if (mDcMotor.getPower() == 0.0 || isEncoderSatisfied())
-            return 0.0;
-        else
-            return Math.min(1.0, delta / (mDcMotor.getPower() * 100.0));
+    int getCurrentPosition() {
+        return mDcMotor.getCurrentPosition();
     }
 
     void stop() {

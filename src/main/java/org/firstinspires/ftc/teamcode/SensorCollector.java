@@ -44,11 +44,11 @@ public class SensorCollector {
         mSensors = new LinkedList<>();
     }
 
-    void addSensor(int frequency, Sensor sensor, OnSensorDataCollection onSensorDataCollection) {
+    synchronized void addSensor(int frequency, Sensor sensor, OnSensorDataCollection onSensorDataCollection) {
         mSensors.add(new SensorItem(frequency, sensor, onSensorDataCollection));
     }
 
-    void tick() {
+    synchronized void tick() {
         mClock++;
 
         for (SensorItem sensorItem : mSensors) {
@@ -64,16 +64,21 @@ public class SensorCollector {
         }
     }
 
-    void run() {
+    synchronized void run() {
         mSensorCollectorTimer = new Timer();
-
         mSensorCollectorTimerTask = new TimerTask() {
             @Override
             public void run() {
                 tick();
             }
         };
-
         mSensorCollectorTimer.schedule(mSensorCollectorTimerTask, 0, mFrequency);
+    }
+
+    synchronized void shutdown() {
+        if (mSensorCollectorTimer != null) {
+            mSensorCollectorTimer.cancel();
+            mSensorCollectorTimer = null;
+        }
     }
 }

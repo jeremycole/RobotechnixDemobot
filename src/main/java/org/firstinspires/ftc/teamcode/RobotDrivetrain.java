@@ -1,20 +1,164 @@
 package org.firstinspires.ftc.teamcode;
 
 import android.util.ArrayMap;
-import android.util.Log;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
 @SuppressWarnings("unused")
 class RobotDrivetrain {
+    static class EncoderCounters {
+        private int current;
+        private int target;
+        private int offset;
+
+        EncoderCounters(int encoderCounter) {
+            current = encoderCounter;
+            target = offset = 0;
+        }
+
+        public int getCurrent() {
+            return current;
+        }
+
+        public void setCurrent(int current) {
+            this.current = current;
+        }
+
+        public int getTarget() {
+            return target;
+        }
+
+        public void setTarget(int target) {
+            this.target = target;
+        }
+
+        public int getOffset() {
+            return offset;
+        }
+
+        public void setOffset(int offset) {
+            this.offset = offset;
+        }
+
+        public boolean isEncoderActive() {
+            return (offset != 0);
+        }
+
+        public boolean isEncoderSatisfied() {
+            if (offset > 0 && current >= target)
+                return true;
+
+            if (offset < 0 && current <= target)
+                return true;
+
+            return false;
+        }
+
+        public int getDistance() {
+            return Math.abs(target - current);
+        }
+    }
+
+    static class EncoderStatus {
+        private Map<String, RobotMotor> mRobotMotors;
+        private Map<RobotMotor, EncoderCounters> mEncoderStatus;
+
+        EncoderStatus() {
+            mEncoderStatus = new HashMap<>();
+        }
+
+        EncoderStatus(Map<String, RobotMotor> robotMotors) {
+            mRobotMotors = robotMotors;
+            mEncoderStatus = new HashMap<>();
+            copy(robotMotors);
+        }
+
+        public Map<String, RobotMotor> getRobotMotors() {
+            return mRobotMotors;
+        }
+
+        public void setRobotMotors(Map<String, RobotMotor> robotMotors) {
+            mRobotMotors = robotMotors;
+        }
+
+        public Map<RobotMotor, EncoderCounters> getEncoderStatus() {
+            return mEncoderStatus;
+        }
+
+        public void setEncoderStatus(Map<RobotMotor, EncoderCounters> encoderStatus) {
+            mEncoderStatus = encoderStatus;
+        }
+
+        public void copy(Map<String, RobotMotor> motors) {
+            for (RobotMotor motor : motors.values()) {
+                mEncoderStatus.put(motor,
+                        new EncoderCounters(motor.getDcMotor().getCurrentPosition()));
+            }
+        }
+
+        public void update() {
+            for (RobotMotor motor : mRobotMotors.values()) {
+                if (mEncoderStatus.containsKey(motor))
+                    mEncoderStatus.get(motor).setCurrent(motor.getCurrentPosition());
+                else
+                    mEncoderStatus.put(motor, new EncoderCounters(motor.getCurrentPosition()));
+            }
+        }
+
+        public void setTargetOffset(RobotMotor motor, int offset) {
+            EncoderCounters counters = mEncoderStatus.get(motor);
+            counters.setOffset(offset);
+            counters.setTarget(counters.current + offset);
+        }
+
+        public void clearTarget(RobotMotor motor) {
+            EncoderCounters counters = mEncoderStatus.get(motor);
+            counters.setOffset(0);
+            counters.setTarget(0);
+        }
+
+        public void clearTarget() {
+            for (RobotMotor motor : mRobotMotors.values()) {
+                clearTarget(motor);
+            }
+        }
+
+        public boolean isEncoderSatisfied(RobotMotor motor) {
+            return mEncoderStatus.get(motor).isEncoderSatisfied();
+        }
+
+        public boolean isAnyEncoderSatisfied() {
+            for (EncoderCounters counters : mEncoderStatus.values()) {
+                if (!counters.isEncoderActive())
+                    continue;
+
+                if (counters.isEncoderSatisfied())
+                    return true;
+            }
+            return false;
+        }
+
+        double minDistanceUntilAnyEncoderSatisfied() {
+            double min = Double.MAX_VALUE;
+
+            for (EncoderCounters counters : mEncoderStatus.values()) {
+                if (!counters.isEncoderActive())
+                    continue;
+
+                min = Math.min(min, Math.abs(counters.getDistance()));
+            }
+
+            return min;
+        }
+    }
+
     static class DriveParameters {
         private double mPower;
         private double mSlippage;
@@ -128,6 +272,7 @@ class RobotDrivetrain {
     private Map<String, RobotMotor> mRobotMotors;
     private List<Translation> mTranslations;
     private List<Rotation> mRotations;
+    private EncoderStatus mEncoderStatus;
     private int mMaxSpeed = 1;
     private double mGearRatio = 1.0;
     private double mEncoderCountsPerRevolution = 1.0;
@@ -140,11 +285,14 @@ class RobotDrivetrain {
     private Double mRotationSpeed;
     private Integer mTranslationAngle;
     private RotationDirection mRotationDirection;
+    private Double mTargetSpeedAdjustment;
 
     RobotDrivetrain() {
         mRobotMotors = new HashMap<>();
         mTranslations = new ArrayList<>();
         mRotations = new ArrayList<>();
+        mEncoderStatus = new EncoderStatus(mRobotMotors);
+        mTargetSpeedAdjustment = null;
     }
 
     void run() {
@@ -155,13 +303,16 @@ class RobotDrivetrain {
                 tick();
             }
         };
-
         mDrivetrainTimer.schedule(mDrivetrainTimerTask, 0, 1);
     }
 
-    void stop() {
+    void shutdown() {
         stopAllMotors();
-        mDrivetrainTimer.cancel();
+
+        if (mDrivetrainTimer != null) {
+            mDrivetrainTimer.cancel();
+            mDrivetrainTimer = null;
+        }
     }
 
     int getMaxSpeed() {
@@ -202,6 +353,7 @@ class RobotDrivetrain {
 
     void addRobotMotor(RobotMotor motor) {
         motor.setDrivetrain(this);
+        motor.getDcMotor().setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         motor.getDcMotor().setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         motor.getDcMotor().setMaxSpeed(mMaxSpeed);
         motor.getDcMotor().setPower(0.0);
@@ -284,10 +436,6 @@ class RobotDrivetrain {
         double lWeight = 1.0 - (angle - lTranslation.getAngle()) / lhDistance;
         double hWeight = 1.0 - lWeight;
 
-        //Log.i("RobotDrivetrain", String.format(Locale.US,
-        //        "makeTranslationDrive: angle=%d, l=%d, h=%d, lWeight=%.2f, hWeight=%.2f, lhDistance=%.2f",
-        //        angle, l, h, lWeight, hWeight, lhDistance));
-
         return blendDrives(lTranslation.getDrive(), lWeight, hTranslation.getDrive(), hWeight);
     }
 
@@ -305,16 +453,6 @@ class RobotDrivetrain {
 
     private int convertDistanceToEncoderCounts(double distance) {
         return (int) ((distance / getWheelCircumference()) * getEncoderCountsPerRevolution());
-    }
-
-    double getDistanceToPosition(int current, int target) {
-        return convertEncoderCountsToDistance(Math.abs(target - current));
-    }
-
-    double getDistanceToPosition(RobotMotor motor) {
-        return getDistanceToPosition(
-                motor.getDcMotor().getCurrentPosition(),
-                motor.getDcMotor().getTargetPosition());
     }
 
     synchronized public Map<RobotMotor, DriveParameters> getTranslationDrive() {
@@ -341,8 +479,28 @@ class RobotDrivetrain {
         mBlendedDrive = blendedDrive;
     }
 
+    public Double getTargetSpeedAdjustment() {
+        return mTargetSpeedAdjustment;
+    }
+
+    public void setTargetSpeedAdjustment(Double targetSpeedAdjustment) {
+        mTargetSpeedAdjustment = targetSpeedAdjustment;
+    }
+
+    public void clearTargetSpeedAdjustment() {
+        mTargetSpeedAdjustment = null;
+    }
+
     boolean isStoppedAllMotors() {
         return getBlendedDrive() == null;
+    }
+
+    void stopTranslation() {
+        setTranslationDrive(null);
+    }
+
+    void stopRotation() {
+        setRotationDrive(null);
     }
 
     void stopAllMotors() {
@@ -351,15 +509,6 @@ class RobotDrivetrain {
         setBlendedDrive(null);
         for (RobotMotor motor : mRobotMotors.values()) {
             motor.stop();
-        }
-    }
-
-    synchronized private void setRobotMotorsDistance(Map<RobotMotor, DriveParameters> drive, double distance) {
-        for (RobotMotor motor : drive.keySet()) {
-            motor.setTargetPositionOffset(
-                    convertDistanceToEncoderCounts(
-                            Math.copySign(drive.get(motor).getSlippage() * distance,
-                                    drive.get(motor).getPower())));
         }
     }
 
@@ -374,29 +523,33 @@ class RobotDrivetrain {
         }
     }
 
-    boolean isAnyEncoderSatisfied() {
-        for (RobotMotor motor : mRobotMotors.values()) {
-            if (motor.isEncoderSatisfied())
-                return true;
+    synchronized private void setRobotMotorsDistance(
+            Map<RobotMotor, DriveParameters> drive,
+            double distance) {
+        for (RobotMotor motor : drive.keySet()) {
+            DriveParameters parameters = drive.get(motor);
+            mEncoderStatus.setTargetOffset(motor, convertDistanceToEncoderCounts(
+                    Math.copySign(parameters.getSlippage() * distance,
+                                  parameters.getPower())));
         }
-        return false;
+    }
+
+    boolean isAnyEncoderSatisfied() {
+        return mEncoderStatus.isAnyEncoderSatisfied();
     }
 
     double minDistanceUntilAnyEncoderSatisfied() {
-        double min = 1.0;
-        for (RobotMotor motor : mRobotMotors.values()) {
-            if (motor.isEncoderSatisfied())
-                min = Math.min(min, motor.distanceUntilEncoderSatisfied());
+        return Math.min(1.0, 2.0 * mEncoderStatus.minDistanceUntilAnyEncoderSatisfied() / getEncoderCountsPerRevolution());
+    }
+
+    private void adjustSpeed(double factor) {
+        if (mBlendedDrive != null) {
+            mBlendedDrive = normalizeDrive(mBlendedDrive, Math.max(0.5, factor));
+            setRobotMotorsPower(mBlendedDrive);
         }
-        return min;
     }
 
-    void adjustSpeed(double factor) {
-        mBlendedDrive = normalizeDrive(mBlendedDrive, factor);
-        setRobotMotorsPower(mBlendedDrive);
-    }
-
-    private Map<RobotMotor, DriveParameters> blendTranslationAndRotationDrives() {
+    synchronized private Map<RobotMotor, DriveParameters> blendTranslationAndRotationDrives() {
         if (mTranslationDrive != null && mRotationDrive != null)
             return blendDrives(mTranslationDrive, mTranslationSpeed, mRotationDrive, mRotationSpeed);
         else if (mTranslationDrive != null)
@@ -420,7 +573,7 @@ class RobotDrivetrain {
         mTranslationSpeed = speed;
         mTranslationAngle = angle;
         setTranslationDrive(makeTranslationDrive(angle));
-        setRobotMotorsDistance(mTranslationDrive, distance);
+        setRobotMotorsDistance(getTranslationDrive(), distance);
     }
 
     void rotate(RotationDirection direction, double speed) {
@@ -433,7 +586,10 @@ class RobotDrivetrain {
     }
 
     void tick() {
+        mEncoderStatus.update();
         setBlendedDrive(blendTranslationAndRotationDrives());
+        if (mTargetSpeedAdjustment != null)
+            adjustSpeed(mTargetSpeedAdjustment);
         setRobotMotorsPower(getBlendedDrive());
     }
 }
