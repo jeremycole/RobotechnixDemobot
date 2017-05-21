@@ -355,7 +355,6 @@ class RobotDrivetrain {
         motor.setDrivetrain(this);
         motor.getDcMotor().setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         motor.getDcMotor().setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-        motor.getDcMotor().setMaxSpeed(mMaxSpeed);
         motor.getDcMotor().setPower(0.0);
 
         mRobotMotors.put(motor.getName(), motor);
