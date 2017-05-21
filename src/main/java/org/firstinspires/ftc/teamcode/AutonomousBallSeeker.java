@@ -21,7 +21,7 @@ public class AutonomousBallSeeker extends RobotechnixDemobotOpMode {
         telemetry.update();
 
         if (!robot.mRawIrSeekerSensor.signalDetected() || strength < 0.03) {
-            robot.shutdown();
+            robot.stop();
             return;
         }
 
