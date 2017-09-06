@@ -45,6 +45,50 @@ class RobotechnixDemobot {
         }
     }
 
+    static double clip(double value, double min, double max) {
+        if (value > max)
+            return max;
+
+        if (value < min)
+            return min;
+
+        return value;
+    }
+
+    private class RangeGreaterThan implements DistanceFromTarget {
+        private double mRange;
+        public RangeGreaterThan(double range) {
+            mRange = range;
+        }
+
+        @Override
+        public double distance() {
+            double range = mRangeSensor.value();
+
+            if (range >= mRange)
+                return 0.0;
+
+            return clip(Math.abs(range - mRange), 0.0, 1.0);
+        }
+    }
+
+    private class RangeLessThan implements DistanceFromTarget {
+        private double mRange;
+        public RangeLessThan(double range) {
+            mRange = range;
+        }
+
+        @Override
+        public double distance() {
+            double range = mRangeSensor.value();
+
+            if (range <= mRange)
+                return 0.0;
+
+            return clip(Math.abs(range - mRange), 0.0, 1.0);
+        }
+    }
+
     private class DeviceReachedHeading implements DistanceFromTarget {
         private HeadingProvidingDevice mDevice;
         private RobotDrivetrain.RotationDirection mRotationDirection;
@@ -262,6 +306,8 @@ class RobotechnixDemobot {
 
     private Servo mRangeServo;
     private Servo mClawServo;
+    private Servo mArmAServo;
+    private Servo mArmBServo;
 
     private void initializeServos() {
         mRangeServo = mOpMode.hardwareMap.servo.get("range_servo");
@@ -271,6 +317,12 @@ class RobotechnixDemobot {
         mClawServo = mOpMode.hardwareMap.servo.get("claw_servo");
         mClawServo.setDirection(Servo.Direction.FORWARD);
         mClawServo.setPosition(0.0);
+
+        mArmAServo = mOpMode.hardwareMap.servo.get("arm_a");
+        mArmAServo.setPosition(0.5);
+
+        mArmBServo = mOpMode.hardwareMap.servo.get("arm_b");
+        mArmBServo.setPosition(0.5);
     }
 
     SensorCollector mSensorCollector;
@@ -388,7 +440,7 @@ class RobotechnixDemobot {
     }
 
     private void waitForTarget(DistanceFromTarget distanceFromTarget) {
-        double distance = distanceFromTarget.distance();;
+        double distance = distanceFromTarget.distance();
         info(String.format(Locale.US, "waitForTarget: Initially at distance=%.2f",
                 distance));
         do {
@@ -413,6 +465,26 @@ class RobotechnixDemobot {
         mDrivetrain.translateDistance(angle, speed, distance);
         waitForTarget(new AnyMotorReachedTarget());
         mDrivetrain.stopTranslation();
+    }
+
+    void translateToRangeGreaterThan(int angle, double speed, double range, double max_distance) {
+        info(String.format(Locale.US, "translateDistance(angle=%d, speed=%.2f, range=%.2f, max_distance=%.2f)",
+                angle, speed, range, max_distance));
+        mDrivetrain.clearTargetSpeedAdjustment();
+        mDrivetrain.translateDistance(angle, speed, max_distance);
+        waitForTarget(new RangeGreaterThan(range));
+        mDrivetrain.stopTranslation();
+
+    }
+
+    void translateToRangeLessThan(int angle, double speed, double range, double max_distance) {
+        info(String.format(Locale.US, "translateDistance(angle=%d, speed=%.2f, range=%.2f, max_distance=%.2f)",
+                angle, speed, range, max_distance));
+        mDrivetrain.clearTargetSpeedAdjustment();
+        mDrivetrain.translateDistance(angle, speed, max_distance);
+        waitForTarget(new RangeLessThan(range));
+        mDrivetrain.stopTranslation();
+
     }
 
     void rotate(RobotDrivetrain.RotationDirection direction, double speed) {
