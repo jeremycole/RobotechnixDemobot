@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode;
+package com.robotechnix.demobot;
 
 public class Sensor<T> {
     private SensorDataProvider<T> mSensorDataProvider;

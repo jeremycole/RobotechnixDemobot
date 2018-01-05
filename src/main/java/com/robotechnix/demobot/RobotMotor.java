@@ -1,10 +1,6 @@
-package org.firstinspires.ftc.teamcode;
-
-import android.util.Log;
+package com.robotechnix.demobot;
 
 import com.qualcomm.robotcore.hardware.DcMotor;
-
-import java.util.Locale;
 
 @SuppressWarnings("unused")
 class RobotMotor {

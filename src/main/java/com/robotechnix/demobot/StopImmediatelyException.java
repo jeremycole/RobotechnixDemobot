@@ -1,3 +1,3 @@
-package org.firstinspires.ftc.teamcode;
+package com.robotechnix.demobot;
 
 public class StopImmediatelyException extends RuntimeException {}
